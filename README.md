@@ -37,6 +37,43 @@ The first wave targets the top ticket drivers: Outlook/Teams, VPN/network, docks
   location off - it flags the policy and tells you where to lift it. Per-user toggles
   are only fixed for profiles loaded at run time (i.e. someone is signed in).
 
+## Running it under your RMM or Intune
+
+Nothing here is tied to one product. Any tool that can push a PowerShell script to a Windows endpoint and
+run it as SYSTEM works: NinjaOne, Datto RMM, ConnectWise Automate, Kaseya VSA, N-able, Syncro, Atera,
+Microsoft Intune and the like. Whatever the tool calls its settings, set them like this:
+
+| Setting | Use |
+|---|---|
+| Script type | PowerShell (Windows PowerShell 5.1) |
+| Run as | **System** / local system for everything except `Reset-TeamsCache.ps1`, which needs the tool's *logged-on user* option |
+| 32- or 64-bit | Either. Every script relaunches itself in 64-bit PowerShell if the agent starts it in 32-bit |
+| Timeout | 5 min default; 10 for Get-M365Health and Grab-Logs; 20 for Get-AIAppInventory |
+| Parameters | Pass switches such as `-Fix` or `-Days 7` in the tool's arguments/parameters field |
+| Result | Read the console output the tool captures. Exit 1 is "needs attention", not a crash |
+
+### Microsoft Intune: platform scripts
+
+*Devices > Scripts and remediations > Platform scripts.* Set **Run this script using the logged on
+credentials** to *No* (SYSTEM), **Enforce script signature check** to *No* unless you sign the scripts, and
+leave **Run script in 64-bit PowerShell host** at either value. Platform scripts accept no parameters, run
+once per device (with three retries on failure) and time out after 30 minutes. The admin center shows only
+success or failure, so read the result from the log copy on the device in `C:\ProgramData\RMMScripts\Logs\`.
+All scripts are ASCII and well under the 200 KB upload limit.
+
+### Microsoft Intune: Remediations
+
+The exit codes line up with Remediations: a detection script that exits `1` means "issue found", which is
+what triggers the remediation script. Any read-only script (`Get-*`, `Test-*`) works as a detection-only
+package, which gives you a fleet-wide report of which devices need attention on a schedule.
+`Invoke-DiskCleanup`, `Repair-Network`, `Enable-LocationServices` and `Reset-TeamsCache` also work as
+detect-and-fix pairs: upload the script as-is for detection (without `-Fix` it reports and exits 1 when there
+is something to fix) and a copy with `[switch]$Fix` changed to `[switch]$Fix = $true` for remediation, since
+packages cannot pass arguments (for `Reset-TeamsCache`, set **Run this script using the logged-on
+credentials** to *Yes*; the others run as SYSTEM). `Clean-PrinterList` is a one-time cutover tool and exits 0 in report mode,
+so run it as a platform script instead. Intune keeps at most 2,048 characters of output per run, so the full
+report is again in the device log. Remediations need Windows Enterprise E3/E5 (or Education A3/A5) licensing.
+
 ## Reading the output
 
 Skim from the bottom: every script ends with
